@@ -1,0 +1,15 @@
+.DS_Store
+
+# Local secrets and environment-specific configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local architecture documents; do not publish with the public repository
+Ace RAG 知识库系统技术方案.md
+Ace RAG 前端技术方案.md
+
+# Local agent instructions; do not publish with the public repository
+AGENTS.md
+CLAUDE.md

@@ -1,0 +1,135 @@
+name: ace-rag-infra
+
+services:
+  postgres:
+    image: postgres:${POSTGRES_IMAGE_TAG:-17.10-alpine3.24}
+    container_name: ace-rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ace_rag}
+      POSTGRES_USER: ${POSTGRES_USER:-ace_rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ace_rag_dev}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ace_rag} -d ${POSTGRES_DB:-ace_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ace-rag
+
+  redis:
+    image: redis:${REDIS_IMAGE_TAG:-8.4.5-alpine}
+    container_name: ace-rag-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - ace-rag
+
+  etcd:
+    image: quay.io/coreos/etcd:${ETCD_IMAGE_TAG:-v3.5.25}
+    container_name: ace-rag-etcd
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command: >-
+      etcd
+      -advertise-client-urls=http://etcd:2379
+      -listen-client-urls=http://0.0.0.0:2379
+      --data-dir=/etcd
+    volumes:
+      - etcd_data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+    networks:
+      - ace-rag
+
+  minio:
+    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2024-12-18T13-15-44Z}
+    container_name: ace-rag-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: minio server /minio_data --console-address ":9001"
+    ports:
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/minio_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+    networks:
+      - ace-rag
+
+  milvus:
+    image: milvusdb/milvus:${MILVUS_IMAGE_TAG:-v2.6.22}
+    container_name: ace-rag-milvus
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MQ_TYPE: woodpecker
+    ports:
+      - "127.0.0.1:${MILVUS_PORT:-19530}:19530"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    networks:
+      - ace-rag
+
+networks:
+  ace-rag:
+    name: ace-rag-network
+
+volumes:
+  postgres_data:
+    name: ace-rag-postgres-data
+  redis_data:
+    name: ace-rag-redis-data
+  etcd_data:
+    name: ace-rag-etcd-data
+  minio_data:
+    name: ace-rag-minio-data
+  milvus_data:
+    name: ace-rag-milvus-data
