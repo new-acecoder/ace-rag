@@ -13,3 +13,13 @@ Ace RAG 前端技术方案.md
 # Local agent instructions; do not publish with the public repository
 AGENTS.md
 CLAUDE.md
+PROGRESS.md
+
+# Python build and test artifacts
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+web/node_modules/
+web/dist/

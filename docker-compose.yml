@@ -75,6 +75,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: minio server /minio_data --console-address ":9001"
     ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/minio_data
@@ -84,6 +85,27 @@ services:
       timeout: 5s
       retries: 15
       start_period: 10s
+    networks:
+      - ace-rag
+
+  rabbitmq:
+    image: rabbitmq:${RABBITMQ_IMAGE_TAG:-4.1-management-alpine}
+    container_name: ace-rag-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-ace_rag}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-ace_rag_dev}
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
     networks:
       - ace-rag
 
@@ -118,6 +140,20 @@ services:
     networks:
       - ace-rag
 
+  attu:
+    image: zilliz/attu:${ATTU_IMAGE_TAG:-v2.6.5}
+    container_name: ace-rag-attu
+    restart: unless-stopped
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "127.0.0.1:${ATTU_PORT:-3000}:3000"
+    depends_on:
+      milvus:
+        condition: service_healthy
+    networks:
+      - ace-rag
+
 networks:
   ace-rag:
     name: ace-rag-network
@@ -133,3 +169,5 @@ volumes:
     name: ace-rag-minio-data
   milvus_data:
     name: ace-rag-milvus-data
+  rabbitmq_data:
+    name: ace-rag-rabbitmq-data

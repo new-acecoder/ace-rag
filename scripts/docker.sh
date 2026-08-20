@@ -43,11 +43,11 @@ prepare() {
 }
 
 wait_healthy() {
-  local services=(postgres redis etcd minio milvus)
+  local services=(postgres redis etcd minio rabbitmq milvus)
   # Milvus allows a 90s start period followed by up to 20 checks every 15s.
   local deadline=$((SECONDS + 420))
 
-  info "等待中间件健康检查通过..."
+  info "等待核心中间件健康检查通过..."
   while (( SECONDS < deadline )); do
     local all_healthy=true
     for service in "${services[@]}"; do
@@ -65,7 +65,7 @@ wait_healthy() {
     done
 
     if [[ "$all_healthy" == true ]]; then
-      ok "PostgreSQL / Redis / etcd / MinIO / Milvus 全部健康。"
+      ok "PostgreSQL / Redis / etcd / MinIO / RabbitMQ / Milvus 全部健康。"
       return 0
     fi
     sleep 3
@@ -101,7 +101,7 @@ url_encode() {
 
 print_endpoints() {
   local postgres_user=ace_rag postgres_password=ace_rag_dev postgres_db=ace_rag postgres_db_uri
-  local postgres_port=5432 redis_port=6379 milvus_port=19530 minio_console_port=9001
+  local postgres_port=5432 redis_port=6379 milvus_port=19530 attu_port=3000 minio_api_port=9000 minio_console_port=9001 rabbitmq_port=5672 rabbitmq_management_port=15672
   local key value
 
   while IFS='=' read -r key value; do
@@ -112,7 +112,11 @@ print_endpoints() {
       POSTGRES_PORT) postgres_port="$value" ;;
       REDIS_PORT) redis_port="$value" ;;
       MILVUS_PORT) milvus_port="$value" ;;
+      ATTU_PORT) attu_port="$value" ;;
+      MINIO_API_PORT) minio_api_port="$value" ;;
       MINIO_CONSOLE_PORT) minio_console_port="$value" ;;
+      RABBITMQ_PORT) rabbitmq_port="$value" ;;
+      RABBITMQ_MANAGEMENT_PORT) rabbitmq_management_port="$value" ;;
     esac
   done < <(compose config --environment)
 
@@ -126,12 +130,18 @@ print_endpoints() {
   PostgreSQL : 127.0.0.1:${postgres_port} / db=${postgres_db}
   Redis      : redis://127.0.0.1:${redis_port}/0
   Milvus     : http://127.0.0.1:${milvus_port}
+  Attu UI    : http://127.0.0.1:${attu_port}
+  MinIO API  : 127.0.0.1:${minio_api_port}
   MinIO UI   : http://127.0.0.1:${minio_console_port}
+  RabbitMQ   : amqp://127.0.0.1:${rabbitmq_port}
+  RabbitMQ UI: http://127.0.0.1:${rabbitmq_management_port}
 
 FastAPI 建议环境变量：
   POSTGRES_URI=postgresql://${postgres_user}:${postgres_password}@127.0.0.1:${postgres_port}/${postgres_db_uri}
   REDIS_URL=redis://127.0.0.1:${redis_port}/0
   MILVUS_URI=http://127.0.0.1:${milvus_port}
+  MINIO_ENDPOINT=127.0.0.1:${minio_api_port}
+  RABBITMQ_URL=amqp://ace_rag:ace_rag_dev@127.0.0.1:${rabbitmq_port}/
 EOF
 }
 
@@ -174,7 +184,7 @@ logs() {
 
 clean() {
   prepare
-  warn "该操作会删除 PostgreSQL、Redis、Milvus、etcd、MinIO 的全部本地数据。"
+  warn "该操作会删除 PostgreSQL、Redis、Milvus、etcd、MinIO、RabbitMQ 的全部本地数据。"
   read -r -p "确认彻底清理？输入 YES 继续: " answer
   if [[ "$answer" != "YES" ]]; then
     info "已取消。"
