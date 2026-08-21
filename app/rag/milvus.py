@@ -2,11 +2,25 @@ from __future__ import annotations
 
 import asyncio
 
-from pymilvus import DataType, Function, FunctionType, MilvusClient
+from pymilvus import AnnSearchRequest, DataType, Function, FunctionType, MilvusClient, RRFRanker
 
 from app.core.config import Settings
 from app.core.errors import ApiException, DocumentIngestionError, ServiceUnavailableError
-from app.rag.schemas import DocumentItem, IngestionChunk
+from app.rag.schemas import DocumentInfo, DocumentItem, IngestionChunk, RetrievedChunk
+
+
+_RETRIEVED_CHUNK_FIELDS = [
+    "document_id",
+    "chunk_id",
+    "chunk_index",
+    "content",
+    "title",
+    "page_number",
+    "source",
+    "document_type",
+    "version",
+    "updated_at",
+]
 
 
 class MilvusChunkRepository:
@@ -52,6 +66,48 @@ class MilvusChunkRepository:
     async def list_documents(self) -> list[DocumentItem]:
         try:
             return await asyncio.to_thread(self._list_documents)
+        except Exception as error:
+            raise ServiceUnavailableError("Milvus") from error
+
+    async def hybrid_search(
+        self,
+        query: str,
+        query_vector: list[float],
+        dense_top_k: int,
+        bm25_top_k: int,
+        final_top_k: int,
+    ) -> list[RetrievedChunk]:
+        try:
+            return await asyncio.to_thread(
+                self._hybrid_search,
+                query,
+                query_vector,
+                dense_top_k,
+                bm25_top_k,
+                final_top_k,
+            )
+        except Exception as error:
+            raise ServiceUnavailableError("Milvus") from error
+
+    async def get_document_context(
+        self,
+        document_id: str,
+        chunk_id: str,
+        window: int,
+    ) -> list[RetrievedChunk]:
+        try:
+            return await asyncio.to_thread(
+                self._get_document_context,
+                document_id,
+                chunk_id,
+                window,
+            )
+        except Exception as error:
+            raise ServiceUnavailableError("Milvus") from error
+
+    async def get_document_info(self, document_id: str) -> DocumentInfo | None:
+        try:
+            return await asyncio.to_thread(self._get_document_info, document_id)
         except Exception as error:
             raise ServiceUnavailableError("Milvus") from error
 
@@ -181,6 +237,109 @@ class MilvusChunkRepository:
         )
         documents = [DocumentItem.model_validate(record) for record in records]
         return sorted(documents, key=lambda document: document.updated_at, reverse=True)
+
+    def _hybrid_search(
+        self,
+        query: str,
+        query_vector: list[float],
+        dense_top_k: int,
+        bm25_top_k: int,
+        final_top_k: int,
+    ) -> list[RetrievedChunk]:
+        collection_name = self._settings.milvus_collection_name
+        client = self._client()
+        if not client.has_collection(collection_name):
+            return []
+
+        results = client.hybrid_search(
+            collection_name=collection_name,
+            reqs=[
+                AnnSearchRequest(
+                    data=[query_vector],
+                    anns_field="dense_vector",
+                    param={"metric_type": "COSINE", "params": {}},
+                    limit=dense_top_k,
+                ),
+                AnnSearchRequest(
+                    data=[query],
+                    anns_field="sparse_vector",
+                    param={"metric_type": "BM25", "params": {}},
+                    limit=bm25_top_k,
+                ),
+            ],
+            ranker=RRFRanker(),
+            limit=final_top_k,
+            output_fields=_RETRIEVED_CHUNK_FIELDS,
+        )
+        return [
+            self._to_retrieved_chunk(hit["entity"], score=float(hit["distance"]))
+            for hit in (results[0] if results else [])
+        ]
+
+    def _get_document_context(
+        self,
+        document_id: str,
+        chunk_id: str,
+        window: int,
+    ) -> list[RetrievedChunk]:
+        collection_name = self._settings.milvus_collection_name
+        client = self._client()
+        if not client.has_collection(collection_name):
+            return []
+
+        target = client.query(
+            collection_name=collection_name,
+            filter=(
+                f'document_id == "{document_id}" and chunk_id == "{chunk_id}"'
+            ),
+            output_fields=["chunk_index"],
+            limit=1,
+        )
+        if not target:
+            return []
+
+        chunk_index = int(target[0]["chunk_index"])
+        records = client.query(
+            collection_name=collection_name,
+            filter=(
+                f'document_id == "{document_id}" and '
+                f"chunk_index >= {max(0, chunk_index - window)} and "
+                f"chunk_index <= {chunk_index + window}"
+            ),
+            output_fields=_RETRIEVED_CHUNK_FIELDS,
+            limit=window * 2 + 1,
+        )
+        return sorted(
+            [self._to_retrieved_chunk(record) for record in records],
+            key=lambda chunk: chunk.chunk_index,
+        )
+
+    def _get_document_info(self, document_id: str) -> DocumentInfo | None:
+        collection_name = self._settings.milvus_collection_name
+        client = self._client()
+        if not client.has_collection(collection_name):
+            return None
+
+        records = client.query(
+            collection_name=collection_name,
+            filter=f'document_id == "{document_id}" and chunk_index == 0',
+            output_fields=[
+                "document_id",
+                "title",
+                "version",
+                "source",
+                "document_type",
+                "updated_at",
+            ],
+            limit=1,
+        )
+        return DocumentInfo.model_validate(records[0]) if records else None
+
+    @staticmethod
+    def _to_retrieved_chunk(
+        record: dict[str, object], score: float | None = None
+    ) -> RetrievedChunk:
+        return RetrievedChunk.model_validate({**record, "score": score})
 
     def _delete_document(self, document_id: str, collection_name: str) -> bool:
         client = self._client()

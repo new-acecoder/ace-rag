@@ -56,5 +56,25 @@ class IngestionJobNotCancellableError(ApiException):
         super().__init__(409, "INGESTION_JOB_NOT_CANCELLABLE", "当前摄取任务不可取消")
 
 
+class ConversationBusyError(ApiException):
+    def __init__(self) -> None:
+        super().__init__(409, "CONVERSATION_BUSY", "当前会话仍在执行")
+
+
+class TurnRequiresResumeError(ApiException):
+    def __init__(self) -> None:
+        super().__init__(409, "TURN_REQUIRES_RESUME", "请先继续未完成的回答")
+
+
+class TurnAlreadyCompletedError(ApiException):
+    def __init__(self) -> None:
+        super().__init__(409, "TURN_ALREADY_COMPLETED", "该轮回答已完成")
+
+
+class ConversationNotFoundError(ApiException):
+    def __init__(self) -> None:
+        super().__init__(404, "CONVERSATION_NOT_FOUND", "会话不存在")
+
+
 class IngestionCancelledError(Exception):
     pass

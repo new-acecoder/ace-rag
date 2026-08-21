@@ -30,3 +30,13 @@ class EmbeddingService:
         if not embeddings or len(embeddings) != len(texts):
             raise ServiceUnavailableError("Embedding 模型")
         return embeddings
+
+    async def embed_query(self, query: str) -> list[float]:
+        try:
+            embedding = await asyncio.to_thread(self._client.embed_query, query)
+        except Exception as error:
+            raise ServiceUnavailableError("Embedding 模型") from error
+
+        if not embedding:
+            raise ServiceUnavailableError("Embedding 模型")
+        return embedding

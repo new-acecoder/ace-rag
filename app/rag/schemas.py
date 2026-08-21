@@ -32,6 +32,16 @@ class RetrievedChunk(BaseModel):
     score: float | None = None
 
 
+class Source(BaseModel):
+    citation_index: int
+    document_id: str
+    chunk_id: str
+    title: str
+    page_number: int | None
+    source: str
+    document_type: DocumentType
+
+
 class DocumentInfo(BaseModel):
     document_id: str
     title: str

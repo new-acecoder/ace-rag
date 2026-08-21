@@ -14,6 +14,8 @@ Ace RAG 前端技术方案.md
 AGENTS.md
 CLAUDE.md
 PROGRESS.md
+代码解析.md
+问题.md
 
 # Python build and test artifacts
 .venv/
@@ -23,3 +25,5 @@ __pycache__/
 .idea/
 web/node_modules/
 web/dist/
+.pnpm-store/
+/tests/

@@ -12,11 +12,13 @@
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.8.4",
     "element-plus": "^2.9.8",
+    "markdown-it": "^15.0.0",
     "pinia": "^3.0.1",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^22.13.10",
     "@vitejs/plugin-vue": "^5.2.3",
     "typescript": "~5.7.3",
